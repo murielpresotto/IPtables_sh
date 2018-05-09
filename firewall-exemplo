@@ -1,0 +1,261 @@
+#!/bin/bash
+#
+# ## BEGIN INIT INFO
+# Provides : Firewall
+# Required - Start : networking
+# Required - Stop :
+# Should - Start : S
+# Should - Stop :
+# Default - Start : 2 3 4 5
+# Default - Stop :
+# Short - Description : Firewall - Joatham Pedro
+# Description : Firewall - Joatham Pedro
+#
+# ## END INIT INFO
+##########################################################################################################################################
+# 1- VARIAVEIS
+##########################################################################################################################################
+IPT=$(which iptables)
+HIPRT="1024:65535"
+##########################################################################################################################################
+# 1.1- EXTERNO - Informe a placa de rede externa em IFEXT="" e o IP externo em IPEXT=""
+##########################################################################################################################################
+IFEXT=""
+IPEXT=""
+##########################################################################################################################################
+# 1.2- INTERNO - Informe a placa de rede interna em IFINT="" e o ip interno em IPINT=""
+##########################################################################################################################################
+IFINT=""
+IPINT=""
+##########################################################################################################################################
+# 1.3- Redes - Informe o IP da WAN (geralmente 0/0) em IPWAN="" e o IP da rede interna (CIDR) em IPLAN=""
+##########################################################################################################################################
+IPWAN=""
+IPLAN=""
+##########################################################################################################################################
+# 1.4- Informe em OPENP="" as portas abertas no firewall no formato "porta:protocolo:origem", ex: 22:tcp:192.168.0.2
+# e as portas encaminhadas em FRWDP="" como "porta:protocolo:destino:porta", ex: 80:tcp:192.168.0.3:80
+# As portas de saída devem ser informadas em OUTPT="" no formato porta:protocolo:destino, ex: 53:udp:0/0 ou 53:udp:$IPWAN
+# As portas que devem ser priorizadas, devem ser informadas em TOSPT="" apenas com o numero ex: TOSPT="22 80 443"
+##########################################################################################################################################
+OPENP=""
+FRWDP=""
+OUTPT=""
+TOSPT=""
+##########################################################################################################################################
+# 2- POLITICA DROP
+##########################################################################################################################################
+FN_DROP()
+{
+	for CHAIN in INPUT OUTPUT FORWARD
+	do
+		$IPT -P $CHAIN DROP
+	done
+}
+##########################################################################################################################################
+# 3- POLITICA ACCEPT
+##########################################################################################################################################
+FN_ACCEPT()
+{
+	for CHAIN in INPUT OUTPUT FORWARD
+	do
+		$IPT -P $CHAIN ACCEPT
+	done
+}
+##########################################################################################################################################
+# 4- LIMPAR FIREWALL
+##########################################################################################################################################
+FN_LIMPA()
+{
+	for TABLE in filter nat mangle
+	do
+		$IPT -t $TABLE -X
+		$IPT -t $TABLE -F
+	done
+}
+##########################################################################################################################################
+# 5- LIBERAR LOCALHOST
+##########################################################################################################################################
+FN_LOCAL()
+{
+	$IPT -I INPUT -i lo -d 127.0.0.1 -j ACCEPT
+	$IPT -I OUTPUT -o lo -s 127.0.0.1 -j ACCEPT
+}
+##########################################################################################################################################
+# 6- LIBERAR CONEXOES
+##########################################################################################################################################
+FN_CONN()
+{
+	for CHAIN in INPUT OUTPUT FORWARD
+	do
+		$IPT -A $CHAIN -m state --state ESTABLISHED,RELATED -j ACCEPT
+	done
+}
+##########################################################################################################################################
+# 7- ENCAMINHAR REDES
+##########################################################################################################################################
+FN_FRWD()
+{
+	for FROM in -s -d
+	do
+		$IPT -A FORWARD $FROM $IPLAN -j ACCEPT
+	done
+}
+##########################################################################################################################################
+# 8- PING
+##########################################################################################################################################
+FN_PING()
+{
+	$IPT -A INPUT -i $IFINT -p icmp -s $IPLAN -d $IPINT --icmp-type 0 -j ACCEPT
+	$IPT -A INPUT -i $IFINT -p icmp -s $IPLAN -d $IPINT --icmp-type 8 -j ACCEPT
+	$IPT -A INPUT -i $IFEXT -p icmp -s $IPWAN -d $IPEXT --icmp-type 0 -j ACCEPT
+	$IPT -A OUTPUT -o $IFINT -p icmp -s $IPINT -d $IPLAN --icmp-type 0 -j ACCEPT
+	$IPT -A OUTPUT -o $IFINT -p icmp -s $IPINT -d $IPLAN --icmp-type 8 -j ACCEPT
+	$IPT -A OUTPUT -o $IFEXT -p icmp -s $IPEXT -d $IPWAN --icmp-type 8 -j ACCEPT
+}
+##########################################################################################################################################
+# 9- PORTAS DE SAIDA
+##########################################################################################################################################
+FN_OUTPT()
+{
+	for PORTA in $OUTPT
+	do
+		PORT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $1 }'`"
+		PROT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $2 }'`"
+		DEST="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $3 }'`"
+		if [ -z $PROT ]
+		then
+			PROT="tcp"
+		fi
+		if [ -z $DEST ]
+		then
+			DEST="$IPWAN"
+		fi
+		NET="`echo "$IPLAN" | awk 'BEGIN { FS = "." } ; { print $1 FS $2 FS $3 FS "*"}'`"
+		case $DEST in
+		$NET)
+			IF="`echo $IFINT`"
+			IP="`echo $IPINT`"
+		;;
+		*)
+			IF="`echo $IFEXT`"
+			IP="`echo $IPEXT`"
+		;;
+		esac
+		$IPT -A INPUT -i $IF -p $PROT -s $DEST --sport $PORT -d $IP --dport $HIPRT -j ACCEPT
+		$IPT -A OUTPUT -o $IF -p $PROT -s $IP --sport $HIPRT -d $DEST --dport $PORT -j ACCEPT
+	done
+}
+##########################################################################################################################################
+# 10- ABRIR PORTAS
+##########################################################################################################################################
+FN_OPENP()
+{
+	for PORTA in $OPENP
+	do
+		PORT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $1 }'`"
+		PROT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $2 }'`"
+		FROM="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $3 }'`"
+		if [ -z $PROT ]
+		then
+			PROT="tcp"
+		fi
+		if [ -z $FROM ]
+		then
+			FROM="$IPINT"
+		fi
+		NET="`echo "$IPLAN" | awk 'BEGIN { FS = "." } ; { print $1 FS $2 FS $3 FS "*"}'`"
+		case $FROM in
+		$NET)
+			IF="`echo $IFINT`"
+			IP="`echo $IPINT`"
+		;;
+		*)
+			IF="`echo $IFEXT`"
+			IP="`echo $IPEXT`"
+		;;
+		esac
+		$IPT -A INPUT -i $IF -p $PROT -s $FROM --sport $HIPRT -d $IP --dport $PORT -j ACCEPT
+		$IPT -A OUTPUT -o $IF -p $PROT -s $IP --sport $PORT -d $FROM --dport $HIPRT -j ACCEPT
+	done
+}
+##########################################################################################################################################
+# 11- ENCAMINHAR PORTAS
+##########################################################################################################################################
+FN_FWDP()
+{
+	for PORTA in $FRWDP
+	do
+		PORT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $1 }'`"
+		PROT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $2 }'`"
+		FWSV="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $3 }'`"
+		FWPT="`echo $PORTA | awk 'BEGIN { FS = ":" } ; { print $4 }'`"
+		if [ -z $PROT ]
+		then
+			PROT="tcp"
+		fi
+		if [ -z $FWPT ]
+		then
+			FWPT="`echo $PORT`"
+		fi
+		$IPT -t nat -A PREROUTING -i $IFEXT -p $PROT -s $IPWAN --sport $HIPRT -d $IPEXT --dport $PORT -j DNAT --to $FWSV:$FWPT
+	done
+}
+##########################################################################################################################################
+# 12- TOS - PRIORIZACAO DE PACOTES
+##########################################################################################################################################
+FN_TOS()
+{
+	for PORTA in $TOSPT
+	do
+		$IPT -t mangle -A PREROUTING -i $IFEXT -p tcp -s $IPWAN -d $IPEXT --sport $PORTA -j TOS --set-tos 16
+		$IPT -t mangle -A OUTPUT -o $IFEXT -p tcp -s $IPEXT -d $IPWAN --dport $PORTA -j TOS --set-tos 16
+	done
+}
+##########################################################################################################################################
+# 13- COMPARTILHAR INTERNET
+##########################################################################################################################################
+FN_SNAT()
+{
+	$IPT -t nat -A POSTROUTING -o $IFEXT -s $IPLAN -j SNAT --to $IPEXT
+}
+##########################################################################################################################################
+# 14- LOG
+##########################################################################################################################################
+FN_LOG()
+{
+	echo "$0 $1 Executado em $(date +%d-%m-%Y-%H:%M:%S)" 2>&1 >> /var/log/firewall.log
+}
+##########################################################################################################################################
+# 15- EXECUCAO DO FIREWALL
+##########################################################################################################################################
+case $1 in
+start)
+	FN_DROP
+	FN_LIMPA
+	FN_LOCAL
+	FN_CONN
+	FN_FRWD
+	FN_PING
+	FN_OUTPT
+	FN_OPENP
+	FN_FWDP
+	FN_TOS
+	FN_SNAT
+	FN_LOG
+	echo "Starting IPTables Firewall Rules: firewall."
+;;
+stop)
+	FN_ACCEPT
+	FN_LIMPA
+	FN_LOG
+	echo "Stopping IPTables Firewall Rules: firewall."
+;;
+restart)
+	$0 stop
+	$0 start
+;;
+*)
+	echo "Use $0 {start|stop|restart}"
+;;
+esac

@@ -1,0 +1,373 @@
+#!/bin/bash
+
+# Empresa: youtube.com/qualteupapo
+v_EMPRESA='qualteupapo'
+
+# Desenvolvido por: MSc.Joatham Pedro 
+# Joatham Pedro
+
+# Politica restritiva
+
+# Firewall
+
+#################################################################
+## Variáveis                                                         
+#################################################################
+
+# Comandos
+v_CMD_IPTABLES=$(which iptables) # caminho do executável do comando iptables
+v_CMD_MODPROBE=$(which modprobe) # caminho do executável do comamdo modprobe
+
+# Interfaces
+#v_IP_INTERFACE_NET="ppp+"
+
+v_IP_INTERFACE_NET="eth0"
+
+v_IP_INTERFACE_VOSTRO="192.168.30.5"
+v_IP_INTERFACE_XP="192.168.30.3"
+v_IP_INTERFACE_BK="192.168.30.4"
+v_IP_INTERFACE_ETH0="192.168.30.2"
+
+v_IP_INTERFACE_ROUT="192.168.30.1"
+
+v_PORTAS_ALTAS=1024:65535
+v_PORT_SSH=42321
+
+v_NET_VLAN_NETWORK="192.168.30.0/255.255.255.240"
+v_NET_ALL_NETWORK="0/0"
+
+func_IP_FORWARD(){
+  echo -e "\033[34m Desabilitando roteamento entre as placas ******* [OK] \033[m ";
+  ip_forward=`cat /proc/sys/net/ipv4/ip_forward`
+  if [ $ip_forward -eq 1 ];
+    then 
+      echo "0" > /proc/sys/net/ipv4/ip_forward
+  fi
+}
+
+func_CLEAR_RULES(){
+  echo -e "\033[34m Limpando regras existentes ********************* [OK] \033[m ";
+
+  $v_CMD_IPTABLES -F
+  $v_CMD_IPTABLES -F -t nat
+  $v_CMD_IPTABLES -F -t mangle
+  $v_CMD_IPTABLES -X 
+  $v_CMD_IPTABLES -X -t nat
+  $v_CMD_IPTABLES -X -t mangle
+  # comentado para gerar estatistica de trafego
+  #$v_CMD_IPTABLES -Z 
+  #$v_CMD_IPTABLES -Z -t nat
+  #$v_CMD_IPTABLES -Z -t mangle 
+}
+
+func_MODPROBE(){
+  echo -e "\033[34m Caregando módulos necessarios ****************** [OK] \033[m ";
+
+  $v_CMD_MODPROBE iptable_nat
+  $v_CMD_MODPROBE ip_conntrack_ftp
+  $v_CMD_MODPROBE ip_nat_ftp
+  $v_CMD_MODPROBE ip_conntrack
+  $v_CMD_MODPROBE ip_conntrack_irc
+  $v_CMD_MODPROBE ip_nat_irc
+  $v_CMD_MODPROBE ipt_state
+  $v_CMD_MODPROBE ip_tables
+  $v_CMD_MODPROBE ipt_REDIRECT
+  $v_CMD_MODPROBE ipt_LOG
+  $v_CMD_MODPROBE ipt_REJECT
+  $v_CMD_MODPROBE ipt_MASQUERADE
+  $v_CMD_MODPROBE ipt_limit
+}
+
+func_POLICY_ACCEPT(){
+ echo -e "\033[34m Criando uma politica padrão ACCEPT ************* [OK] \033[m ";
+
+ $v_CMD_IPTABLES -P INPUT ACCEPT
+ $v_CMD_IPTABLES -P OUTPUT ACCEPT
+ $v_CMD_IPTABLES -P FORWARD ACCEPT
+
+ $v_CMD_IPTABLES -A OUTPUT -d 127.0.0.1 -j ACCEPT
+ $v_CMD_IPTABLES -A INPUT -d 127.0.0.1 -j ACCEPT
+}
+
+func_POLICY_DROP(){ 
+ echo -e "\033[34m Criando uma politica padrão DROP *************** [OK] \033[m ";
+
+ $v_CMD_IPTABLES -P INPUT DROP
+ $v_CMD_IPTABLES -P OUTPUT DROP
+ $v_CMD_IPTABLES -P FORWARD DROP
+
+ $v_CMD_IPTABLES -A OUTPUT -d 127.0.0.1 -j ACCEPT
+ $v_CMD_IPTABLES -A INPUT -d 127.0.0.1 -j ACCEPT
+}
+
+#################################################################
+## REGRAS v_PORTAS_ALTAS PARA CONTROLE LOCALHOST
+#################################################################
+
+func_HOST_DNS(){
+  echo -e "\033[34m Liberando DNS ********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p udp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 53 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -s $v_NET_ALL_NETWORK --sport 53 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_EMAIL(){
+  echo -e "\033[34m Liberando EMAIL ******************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 993 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 993 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 143 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 143 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 110 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 110 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 465 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 465 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 25 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 25 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 587 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 587 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 5222 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 5222 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_WEB(){
+  echo -e "\033[34m Liberando WEB ********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 80 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 80 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+  
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 443 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 443 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_PING(){
+  echo -e "\033[34m Liberando PING ********************************* [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p icmp --icmp-type 8 -o $v_IP_INTERFACE_NET -d $v_NET_ALL_NETWORK -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p icmp --icmp-type 0 -s $v_NET_ALL_NETWORK -i $v_IP_INTERFACE_NET -j ACCEPT
+}
+
+func_HOST_MTR(){
+  echo -e "\033[34m Liberando MTR ********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -p icmp --icmp-type 11 -s $v_NET_ALL_NETWORK -i $v_IP_INTERFACE_NET -j ACCEPT
+}
+
+func_HOST_VBOX(){
+  echo -e "\033[34m Liberando SAMBA/BVOX *************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_XP --dport 139 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_XP --dport 445 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -s $v_IP_INTERFACE_XP --dport 137 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -s $v_IP_INTERFACE_XP --dport 138 -j ACCEPT
+
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_VOSTRO --dport 139 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_VOSTRO --dport 445 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -s $v_IP_INTERFACE_VOSTRO --dport 137 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -s $v_IP_INTERFACE_VOSTRO --dport 138 -j ACCEPT
+}
+
+func_HOST_BITTORRENT(){
+  echo -e "\033[34m Liberando BITTORRENT *************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -p tcp -i $v_IP_INTERFACE_NET --dport 51413 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p udp -i $v_IP_INTERFACE_NET --dport 51413 -j ACCEPT
+}
+
+func_HOST_MSN(){
+  echo -e "\033[34m Liberando MSN ********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 1863 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 1863 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_FTP(){
+  echo -e "\033[34m Liberando FTP ********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 21 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 21 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_METRORED(){
+  echo -e "\033[34m Liberando METRORED ***************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 2095 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 2095 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 2082 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 2082 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_1935(){
+  echo -e "\033[34m Liberando 1935 ********************************* [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 1935 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 1935 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_GTALK(){
+  echo -e "\033[34m Liberando GTALK ******************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 5223 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 5223 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+  echo -e "\033[34m Liberando GTALK ******************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 22 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 22 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_HOST_LIFE(){
+  echo -e "\033[34m Liberando LIFE ********************************* [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 3389 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 3389 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 43390 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 43390 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 42129 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 42129 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORTAS_ALTAS -d $v_NET_ALL_NETWORK --dport 43389 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_NET_ALL_NETWORK --sport 43389 -i $v_IP_INTERFACE_NET --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+func_ESTABILIZA_CONEXOES(){
+  echo -e "\033[34m ESTABILIZA CONEXOES **************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  $v_CMD_IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+}
+
+func_INVALID_INPUT_DROP(){
+  $v_CMD_IPTABLES -A INPUT -m state --state INVALID -j LOG --log-level 6 --log-prefix "<<fw-INPUT-INVALID>>: "
+  $v_CMD_IPTABLES -A INPUT -m state --state INVALID -j DROP
+}
+
+func_ATIVA_LOG(){
+  echo -e "\033[34m ATIVANDO LOG *********************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A OUTPUT -j LOG --log-level 6 --log-prefix "<<fw-output>>: "
+  $v_CMD_IPTABLES -A INPUT -j LOG --log-level 6 --log-prefix "<<fw-input>>: "
+  $v_CMD_IPTABLES -A FORWARD -j LOG --log-level 6 --log-prefix "<<fw-forward>>: "
+}
+func_DESATIVA_LOG(){
+  echo -e "\033[34m DESATIVANDO LOG ******************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -D OUTPUT -j LOG --log-level 6 --log-prefix "<<fw-output>>: "
+  $v_CMD_IPTABLES -D INPUT -j LOG --log-level 6 --log-prefix "<<fw-input>>: "
+  $v_CMD_IPTABLES -D FORWARD -j LOG --log-level 6 --log-prefix "<<fw-forward>>: "
+}
+func_SSH_VOSTRO(){
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORT_SSH -d $v_IP_INTERFACE_VOSTRO --dport $v_PORTAS_ALTAS -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_VOSTRO --sport $v_PORTAS_ALTAS -i $v_IP_INTERFACE_NET --dport $v_PORT_SSH -j ACCEPT
+}
+
+func_SSH_BACKTRACK(){
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -o $v_IP_INTERFACE_NET --sport $v_PORT_SSH -d $v_IP_INTERFACE_BK --dport $v_PORTAS_ALTAS -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s $v_IP_INTERFACE_BK --sport $v_PORTAS_ALTAS -i $v_IP_INTERFACE_NET --dport $v_PORT_SSH -j ACCEPT
+}
+
+func_SSH_PROXY(){
+  $v_CMD_IPTABLES -A OUTPUT -p tcp -s 192.168.30.2 --sport $v_PORTAS_ALTAS -d 192.168.30.6 --dport 22 -j ACCEPT
+  $v_CMD_IPTABLES -A INPUT -p tcp -s 192.168.30.6 --sport 22 -d 192.168.30.2 --dport $v_PORTAS_ALTAS -j ACCEPT
+}
+
+
+
+func_FLAGS (){
+  echo -e "\033[34m BLOQUEANDO flags invalidas ********************* [OK] \033[m ";
+  for FLAGS in $(cat /root/flags.txt | grep -v ^#)
+    do
+     for CHAINS in INPUT FORWARD
+        do
+          $v_CMD_IPTABLES -A $CHAINS -p tcp --tcp-flags $FLAGS $FLAGS -j LOG --log-prefix "flags_$FLAGS"  
+          $v_CMD_IPTABLES -A $CHAINS -p tcp --tcp-flags $FLAGS $FLAGS -j DROP
+	done
+  done
+}
+
+func_PCT_FRAGMENTADOS(){
+  echo -e "\033[34m BLOQUEANDO pacotes fragmentados***************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -f -j LOG --log-prefix "Pacote fragmentado: "
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -f -j DROP
+}
+
+func_IPSPOOFING(){
+  echo -e "\033[34m BLOQUEANDO IP SPOOFING************************** [OK] \033[m ";
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -s 10.0.0.0/8 -j DROP
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -s 172.16.0.0/12 -j DROP
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -s 192.168.0.0/16 -j DROP
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -s 224.0.0.0/4 -j DROP
+  $v_CMD_IPTABLES -A INPUT -i $v_IP_INTERFACE_NET -s 240.0.0.0/5 -j DROP
+}
+
+func_FAIL2BAN(){
+  echo -e "\033[34m ATIVANDO FAIL2BAN******************************* [OK] \033[m ";
+  if [ -x /etc/init.d/fail2ban ]; then
+    /etc/init.d/fail2ban restart
+  fi
+}
+
+case $1 in
+  stop)
+    func_CLEAR_RULES
+    func_MODPROBE
+    func_POLICY_ACCEPT
+    echo -e "\033[31m FIREWALL DESATIVADO **************************** [OK] \033[m ";
+  ;;
+  start)
+    echo -e "\033[34m INICIANDO FIREWALL ***************************** [OK] \033[m ";
+    func_FAIL2BAN
+    func_IP_FORWARD
+    func_CLEAR_RULES
+    func_MODPROBE
+    func_POLICY_DROP
+
+    func_HOST_DNS
+    func_HOST_EMAIL
+    func_HOST_WEB
+    func_HOST_PING
+    func_HOST_MTR
+    func_HOST_VBOX
+    func_HOST_BITTORRENT
+    func_HOST_MSN
+    func_HOST_FTP
+    func_HOST_METRORED
+    func_HOST_1935
+    func_HOST_GTALK
+    func_HOST_LIFE
+    func_SSH_VOSTRO
+    func_SSH_BACKTRACK
+    func_SSH_PROXY
+    func_FLAGS
+    func_PCT_FRAGMENTADOS
+    func_IPSPOOFING
+
+    func_INVALID_INPUT_DROP
+    func_ESTABILIZA_CONEXOES
+
+    echo -e "\033[31m FIREWALL ATIVADO ******************************* [OK] \033[m ";
+
+  ;;
+  restart)
+    $0 stop;
+    $0 start;
+  ;;
+  --enable-log)
+    func_ATIVA_LOG  
+    echo -e "\033[34m LOG ATIVADO ************************************ [OK] \033[m ";
+  ;;
+  --desable-log)
+    func_DESATIVA_LOG 
+    echo -e "\033[31m LOG DESATIVADO ********************************* [OK] \033[m ";
+  ;;
+  --list)
+    clear 
+    iptables -nL -v --line-number
+  ;;
+  --list-nat)
+    clear
+    iptables -nL -v --line-number -t nat
+  ;;
+  --list-mangle)
+    clear
+    iptables -nL -v --line-number -t mangle
+  ;;  
+ 
+  *)
+    echo -e "\033[31m ERRO !!! ************************************* [fail] \033[m ";
+    echo -e "\033[31m Use $0 [stop|start|restart] ****************** [fail] \033[m ";
+  ;;
+esac
+
+
